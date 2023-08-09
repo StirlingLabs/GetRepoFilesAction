@@ -1,0 +1,80 @@
+name: Get Repo Files
+description: Get files from a repo, without checking out everything
+author: StirlingLabs
+
+inputs:
+  files:
+    description: List of files to download, 1 per line
+    type: string
+    required: false
+  filesJson:
+    description: "List of files to download and their new names in json format, e.g. {'repo_name': 'local_name', ...}"
+    type: string
+    required: false
+
+outputs:
+  result:
+    description: Result of the workflow
+    value: ${{ steps.get.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - name: Debug
+      if: false
+      shell: bash
+      env:
+        GITHUB_CONTEXT: ${{ toJSON(github) }}
+      run: |
+        echo "$GITHUB_CONTEXT"
+
+    - name: No Input
+      id: missing
+      shell: bash
+      if: inputs.files == '' && inputs.filesJson == ''
+      run: |
+        echo "No files to download"
+        echo "result=No files to download" >> $GITHUB_OUTPUT
+        exit 1
+
+    - name: Get
+      id: get
+      env:
+        repo: ${{ github.repository }}
+        files: ${{ inputs.files }}
+        filesJson: ${{ inputs.filesJson }}
+        result: unknown
+      shell: bash
+      run: |
+        main() {
+          echo "# Downloads " >> "$GITHUB_SUMMARY"
+          echo "| Source | Destination | Result |" >> "$GITHUB_SUMMARY"
+          result="unknown"
+          rawUrl="https://raw.githubusercontent.com/${repo}/${GITHUB_REF#refs/heads/}"
+          echo "rawUrl=$rawUrl" >> "$GITHUB_OUTPUT"
+          if [ "$files" != "" ] ; then
+            for file in $files; do
+              echo -e "| [${file}](${rawUrl}/${file}) | $file | " >> "$GITHUB_SUMMARY"
+              download "$file" "${rawUrl}/${file}"
+            done
+          fi
+          if [ "$filesJson" != "" ] ; then
+            echo "$filesJson" | jq -r 'to_entries[] | [.key, .value] | @tsv' | while IFS=$'\t' read -r remote_name local_name; do
+              echo -e "| [${remote_name}](${rawUrl}/${remote_name}) | $local_name | " >> "$GITHUB_SUMMARY"
+              download "$local_name" "${rawUrl}/${remote_name}"
+            done
+          fi
+          [[ "$result" == "unknown" ]] && result="success"
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+        }
+        download() {
+          if wget --output-document "$1" "$2" ; then
+            echo "Received $1"
+            echo -e "✅ |\n" >> "$GITHUB_SUMMARY"
+          else
+            result="failed"
+            echo -e "❌ |\n" >> "$GITHUB_SUMMARY"
+          fi
+        }
+        main "$@"
+        [[ "$result" == "success" ]] && exit 0 || exit 1
