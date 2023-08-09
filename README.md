@@ -16,15 +16,20 @@
           files: |
             icon.png
             README.md
-          filesJson: |
+          files_json: |
             { "title.jpg": "banner.jpg", 
               "src/header.h": "header.h"
               }
 ```
 
-## Parameters
-
+## Inputs
 |Name|Function|
 |-|-|
 |files|List of files to download, 1 per line|
-|jsonFiles|JSON list of files to get and rename, in the format  `{"repo_name": "local_name", ...}` |
+|files_json|List of files to get and rename, in JSON format: `{"repo_name": "local_name", ...}` |
+
+## Outputs
+|Name|Function|
+|-|-|
+|downloaded|List of files downloaded, 1 per line|
+|downloaded_json|JSON array of files downloaded, i.e. `[ "file1.ext", "file2.ext" ... ]` |

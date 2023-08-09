@@ -7,15 +7,18 @@ inputs:
     description: List of files to download, 1 per line
     type: string
     required: false
-  filesJson:
+  files_json:
     description: "List of files to download and their new names in json format, e.g. {'repo_name': 'local_name', ...}"
     type: string
     required: false
 
 outputs:
-  result:
-    description: Result of the workflow
-    value: ${{ steps.get.outputs.result }}
+  downloaded:
+    description: List of files downloaded by the workflow, newline-delimited
+    value: ${{ steps.get.outputs.downloaded }}
+  downloaded_json:
+    description: JSON array of files downloaded by the workflow
+    value: ${{ steps.get.outputs.downloaded_json }}
 
 runs:
   using: composite
@@ -42,7 +45,7 @@ runs:
       env:
         repo: ${{ github.repository }}
         files: ${{ inputs.files }}
-        filesJson: ${{ inputs.filesJson }}
+        files_json: ${{ inputs.files_json }}
         result: unknown
       shell: bash
       run: |
@@ -50,27 +53,32 @@ runs:
           echo "# Downloads " >> "$GITHUB_SUMMARY"
           echo "| Source | Destination | Result |" >> "$GITHUB_SUMMARY"
           result="unknown"
+          downloaded_list=()
           rawUrl="https://raw.githubusercontent.com/${repo}/${GITHUB_REF#refs/heads/}"
           echo "rawUrl=$rawUrl" >> "$GITHUB_OUTPUT"
           if [ "$files" != "" ] ; then
             for file in $files; do
-              echo -e "| [${file}](${rawUrl}/${file}) | $file | " >> "$GITHUB_SUMMARY"
-              download "$file" "${rawUrl}/${file}"
+              download "$file" "$file"
             done
           fi
-          if [ "$filesJson" != "" ] ; then
-            echo "$filesJson" | jq -r 'to_entries[] | [.key, .value] | @tsv' | while IFS=$'\t' read -r remote_name local_name; do
-              echo -e "| [${remote_name}](${rawUrl}/${remote_name}) | $local_name | " >> "$GITHUB_SUMMARY"
-              download "$local_name" "${rawUrl}/${remote_name}"
+          if [ "$files_json" != "" ] ; then
+            echo "$files_json" | jq -r 'to_entries[] | [.key, .value] | @tsv' | while IFS=$'\t' read -r remote_name local_name; do
+              download "$local_name" "$remote_name"
             done
           fi
           [[ "$result" == "unknown" ]] && result="success"
-          echo "result=$result" >> "$GITHUB_OUTPUT"
+          downloaded=$(printf '%s\n' "${downloaded_list[@]}")
+          echo "downloaded=$downloaded" >> "$GITHUB_OUTPUT"
+          downloaded_json=$(printf '%s\n' "${downloaded_list[@]}" | jq -R . | jq -s .)
+          echo "downloaded_json=$downloaded_json" >> "$GITHUB_OUTPUT"
         }
         download() {
-          if wget --output-document "$1" "$2" ; then
+          url="${rawUrl}/$2"
+          echo -e "| [$2](${url}) | $1 | " >> "$GITHUB_SUMMARY"
+          if wget --output-document "$1" "${url}" ; then
             echo "Received $1"
             echo -e "✅ |\n" >> "$GITHUB_SUMMARY"
+            downloaded_list+=("$1")
           else
             result="failed"
             echo -e "❌ |\n" >> "$GITHUB_SUMMARY"
